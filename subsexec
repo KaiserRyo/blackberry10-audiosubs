@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "BEGIN Processing: $*"
+export TRACK="$(echo $* | awk -F- '{print $1}' | awk -F/ '{print $NF}' | xargs -I DATE date -d @DATE +%j%H%M | xargs -I NUM expr 3561232 - NUM)"
+echo "faketrack: $TRACK"
+echo taffy --album "$ALBUM" --genre "$GENRE" --track "$TRACK" $*
+taffy --album "$ALBUM" --genre "$GENRE" --track "$TRACK" $*
+echo dropbox_uploader.sh -s upload $* /Apps/MicinitiSync/music/youtube
+dropbox_uploader.sh -s upload $* /Apps/MicinitiSync/music/youtube
+#mkdir -p $(dirname $DEST/$*) 2>/dev/null
+#echo cp --parents $* $(dirname $DEST/$*)
+#cp --parents $* $(dirname $DEST/$*)
+echo rm $*
+rm $*
+echo "END Processing: $*"

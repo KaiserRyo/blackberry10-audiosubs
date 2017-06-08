@@ -1,0 +1,68 @@
+#!/bin/bash
+
+export DEST="$HOME/www/.yt"
+
+echo -n "BEGIN $0: " > $DEST/log.txt
+date >> $DEST/log.txt
+
+lockdir=$HOME/local/var/lock/subs.lockdir
+if mkdir "$lockdir"
+then
+    #echo >&2 "successfully acquired lock"
+    # Remove lockdir when the script finishes, or when it receives a signal
+    trap 'rmdir "$lockdir"' 0    # remove directory when script finishes
+else
+    echo >&2 "cannot acquire lock, giving up on $lockdir"
+    exit 1
+fi
+
+export YTMP="$(mktemp -d /tmp/deleteme.subs.XXXXXXXXXXXXXXXX)"
+
+cd $DEST || exit 2
+cd $YTMP || exit 3
+
+#fs lq $HOME | grep $USER
+tmpreaper --runtime=600 3h $DEST/Uploads/
+
+COUNTER=0
+while [ $(dropbox_uploader.sh space | grep ^Free | awk '{print $2}') -lt 500 ]; do
+    sleep 2
+    OLDEST="$(dropbox_uploader.sh list /Apps/MicinitiSync/music/youtube 2>&1 | grep -e ^' \[F\]'.*.opus | awk '{print $3}' | grep -e ^1.*.opus | sort -n | head -1)"
+    sleep 2
+    dropbox_uploader.sh delete /Apps/MicinitiSync/music/youtube/$OLDEST 2>&1 > /dev/null && echo -n . >> $DEST/log.txt
+    sleep 2
+    let COUNTER=COUNTER+1
+    if [ $COUNTER -gt 90 ]; then
+        break
+    fi
+done
+echo >> $DEST/log.txt
+
+# Download subscription_manager.xml via "Export to RSS readers" option at bottom of
+# https://www.youtube.com/subscription_manager
+sed 's/xmlUrl=/\n/g' $DEST/subscription_manager.xml | grep channel_id | awk -F\" '{print $2}' | awk -F= '{print $2}' | sed 's/^/https\:\/\/www\.youtube\.com\/channel\//g' > $DEST/subs.txt
+cat $DEST/periscope.txt >> $DEST/subs.txt
+pb list -c 20 > $DEST/pb1.tmp
+grep ^Link $DEST/pb1.tmp | awk '{print $2}' | grep "https://.*.youtube.com/watch?v=" > $DEST/pb2.tmp
+grep ^Link $DEST/pb1.tmp | awk '{print $2}' | grep "https://www.pscp.tv/w/" >> $DEST/pb2.tmp
+sort $DEST/pb2.tmp | uniq > $DEST/pb3.tmp
+cat $DEST/pb3.tmp >> $DEST/subs.txt
+
+# brew install youtube-dl tmpreaper libav --with-opus
+
+mkdir $YTMP/Uploads
+export ALBUM="$(date +%F\ %H)"
+export GENRE="Speech"
+youtube-dl --batch-file $DEST/subs.txt --playlist-end 10 --download-archive $DEST/downloaded.txt --ignore-errors --no-mark-watched --limit-rate 5M --restrict-filenames --extract-audio --audio-format opus --audio-quality 32K --prefer-avconv --add-metadata \
+-o 'Uploads/%(playlist)s/%(epoch)s-%(title)s.%(ext)s' \
+--reject-title Occult \
+--reject-title Minecraft \
+--exec "subsexec {}" \
+--no-progress --verbose >> $DEST/log.txt 2>&1
+
+tmpreaper --runtime=600 3h $DEST/Uploads/
+rmdir $DEST/Uploads/* 2>/dev/null
+rm -rf /tmp/deleteme.subs.*
+#fs lq $HOME | grep $USER
+echo -n "END $0: " >> $DEST/log.txt
+date >> $DEST/log.txt
